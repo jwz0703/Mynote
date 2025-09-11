@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mynote - 編輯器</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 樣式與原始碼大致相同，僅移除總管相關樣式 -->
+    <style>
+        :root {
+            --primary-bg: #f6f8fa;
+            --secondary-bg: #ffffff;
+            --border-color: #d0d7de;
+            --text-color: #24292f;
+            --link-color: #0969da;
+            --button-bg: #2c974b;
+            --button-hover-bg: #298e46;
+            --button-text: #ffffff;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            --mono-font: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+        }
+        body {
+            font-family: var(--font-family);
+            background-color: var(--primary-bg);
+            color: var(--text-color);
+            margin: 0;
+            padding: 15px;
+            font-size: 16px;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            background-color: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 20px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+        h2 {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        button {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--button-text);
+            background-color: var(--button-bg);
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        button:hover { background-color: var(--button-hover-bg); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        button.secondary { background-color: #f6f8fa; color: #24292f; border-color: rgba(27, 31, 36, 0.15); }
+        button.secondary:hover { background-color: #f3f4f6; }
+        .button-group { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .settings-bar { display: flex; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .settings-bar input { padding: 8px; border: 1px solid var(--border-color); border-radius: 6px; flex-grow: 1; }
+        #editor-view { display: flex; flex-grow: 1; flex-direction: column; }
+        #editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
+        #editor-filename { margin: 0; font-size: 1.2em; word-break: break-all; }
+        
+        .view-mode-group {
+            display: flex;
+            gap: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .view-mode-group button {
+            border: none;
+            border-radius: 0;
+            background-color: #f6f8fa;
+            color: #24292f;
+            padding: 6px 12px;
+            font-size: 14px;
+        }
+        .view-mode-group button:not(:last-child) {
+            border-right: 1px solid var(--border-color);
+        }
+        .view-mode-group button.active {
+            background-color: var(--button-bg);
+            color: white;
+        }
+        .view-mode-group button:hover:not(.active) {
+            background-color: #f3f4f6;
+        }
+        
+        #editor-container { 
+            display: flex; 
+            flex-grow: 1; 
+            gap: 15px; 
+            min-height: 600px;
+            height: calc(100vh - 250px);
+        }
+        
+        #editor-container.edit-mode #md-preview { display: none; }
+        #editor-container.preview-mode #md-editor { display: none; }
+        
+        #editor-container.edit-mode #md-editor,
+        #editor-container.preview-mode #md-preview {
+            max-width: 100%;
+        }
+        
+        #md-editor { 
+            width: 100%; 
+            height: 100%; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            padding: 15px; 
+            font-family: var(--mono-font); 
+            font-size: 14px; 
+            resize: none; 
+            box-sizing: border-box;
+            min-height: 400px;
+        }
+        #md-preview { 
+            width: 100%; 
+            height: 100%; 
+            border: 1px solid var(--border-color); 
+            border-radius: 6px; 
+            padding: 15px; 
+            overflow-y: auto; 
+            box-sizing: border-box;
+            min-height: 400px;
+        }
+        #md-preview > *:first-child { margin-top: 0; }
+        #md-preview h1, #md-preview h2, #md-preview h3 { border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
+        #md-preview code { background-color: rgba(27,31,36,.05); border-radius: 3px; padding: .2em .4em; font-family: var(--mono-font); }
+        #md-preview pre { background-color: #f6f8fa; padding: 16px; border-radius: 3px; }
+        #md-preview pre code { background-color: transparent; padding: 0; }
+        #md-preview blockquote { border-left: .25em solid #dfe2e5; padding: 0 1em; color: #6a737d; }
+        #md-preview table { border-collapse: collapse; }
+        #md-preview th, #md-preview td { border: 1px solid #dfe2e5; padding: 6px 13px; }
+        #md-preview img { max-width: 100%; height: auto; }
+
+        .upload-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: var(--button-bg);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: none;
+            z-index: 1000;
+        }
+
+        @media (max-width: 768px) {
+            #editor-container { 
+                flex-direction: column;
+                height: auto;
+                min-height: 800px;
+            }
+            #md-editor, #md-preview {
+                min-height: 350px;
+            }
+            .view-mode-group {
+                display: none;
+            }
+            #editor-container {
+                flex-direction: column !important;
+            }
+            #editor-container.split-mode #md-editor,
+            #editor-container.split-mode #md-preview {
+                display: block !important;
+                width: 100% !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="settings-bar">
+            <input type="password" id="github-token" placeholder="貼上您的 GitHub Personal Access Token">
+            <button onclick="saveToken()">儲存 Token</button>
+        </div>
+
+        <div id="editor-view">
+            <div id="editor-header">
+                <h2 id="editor-filename"></h2>
+                <div class="button-group">
+                    <div class="view-mode-group">
+                        <button onclick="setViewMode('edit')" id="edit-mode-btn">編輯</button>
+                        <button onclick="setViewMode('split')" id="split-mode-btn" class="active">分割</button>
+                        <button onclick="setViewMode('preview')" id="preview-mode-btn">預覽</button>
+                    </div>
+                    <button class="secondary" id="upload-img-btn" onclick="triggerImageUpload()">上傳圖片</button>
+                    <!-- [新增] 上傳檔案按鈕 -->
+                    <button class="secondary" id="upload-file-btn" onclick="triggerFileUpload()">上傳檔案</button>
+                    <button class="secondary" onclick="backToManager()">返回總管</button>
+                    <button onclick="saveFile()">儲存變更</button>
+                </div>
+            </div>
+            <div id="editor-container" class="split-mode">
+                <textarea id="md-editor" oninput="updatePreview()" placeholder="在此輸入 Markdown..."></textarea>
+                <div id="md-preview"></div>
+            </div>
+        </div>
+    </div>
+    
+    <input type="file" id="image-uploader" accept="image/*" style="display: none;" onchange="handleImageUpload(this)">
+    <!-- [新增] 隱藏的通用檔案上傳輸入框 -->
+    <input type="file" id="file-uploader" style="display: none;" onchange="handleFileUpload(this)">
+    
+    <div class="upload-status" id="upload-status">
+        上傳中...
+    </div>
+
+    <script>
+        // --- 設定 ---
+        const GITHUB_OWNER = "jwz0703";
+        const GITHUB_REPO = "Mynote";
+        const ROOT_PATH = "notes";
+        const GITHUB_API_BASE = "https://api.github.com";
+        const IMAGE_SUBFOLDER = "_images";
+        // [新增] 通用檔案存放的資料夾名稱
+        const FILE_SUBFOLDER = "_files";
+
+        // --- 狀態變數 ---
+        let currentFile = { path: null, sha: null };
+        let currentViewMode = 'split';
+
+        // --- 核心功能 ---
+        window.onload = () => {
+            logMessage("歡迎使用 Mynote 編輯器！");
+            loadToken();
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const path = urlParams.get('path');
+
+            if (path) {
+                openOrInitializeFile(decodeURIComponent(path));
+            } else {
+                logMessage("錯誤：URL 中缺少檔案路徑。", "error");
+                document.getElementById('editor-filename').textContent = "錯誤：找不到檔案";
+                document.getElementById('md-editor').value = "請從檔案總管頁面選擇一個檔案或建立新檔案。";
+                document.getElementById('md-editor').disabled = true;
+            }
+
+            const savedMode = localStorage.getItem('viewMode') || 'split';
+            setViewMode(savedMode);
+        };
+        
+        function logMessage(message, type = "info") {
+            const now = new Date().toLocaleTimeString();
+            const formattedMessage = `[${now}] ${message}`;
+            if (type === 'error') console.error(formattedMessage);
+            else if (type === 'success') console.log(`%c${formattedMessage}`, 'color: #28a745; font-weight: bold;');
+            else console.info(formattedMessage);
+        }
+
+        // --- Token 處理 ---
+        function saveToken() {
+            const token = document.getElementById('github-token').value;
+            if (token) {
+                localStorage.setItem('githubToken', token);
+                logMessage("Token 已儲存。", "success");
+            } else {
+                logMessage("Token 為空，無法儲存。", "error");
+            }
+        }
+
+        function loadToken() {
+            const token = localStorage.getItem('githubToken');
+            if (token) {
+                document.getElementById('github-token').value = token;
+                logMessage("已自動載入儲存的 Token。");
+            } else {
+                logMessage("請輸入您的 GitHub Token 並儲存。", "info");
+            }
+        }
+
+        function getAuthHeaders() {
+            const token = document.getElementById('github-token').value;
+            if (!token) {
+                alert("錯誤: 缺少 GitHub Personal Access Token。請先輸入並儲存。");
+                throw new Error("Token is missing");
+            }
+            return {
+                'Accept': 'application/vnd.github+json',
+                'Authorization': `Bearer ${token}`,
+                'X-GitHub-Api-Version': '2022-11-28'
+            };
+        }
+        
+        async function githubApiRequest(url, options = {}) {
+            const headers = getAuthHeaders();
+            const response = await fetch(url, { ...options, headers: { ...headers, ...options.headers } });
+            const data = response.status === 204 ? null : await response.json();
+            if (!response.ok) {
+                throw new Error(`GitHub API Error: ${response.status} ${data?.message || response.statusText}`);
+            }
+            return data;
+        }
+
+        // --- 檢視模式功能 ---
+        function setViewMode(mode) {
+            currentViewMode = mode;
+            const container = document.getElementById('editor-container');
+            const uploadImgBtn = document.getElementById('upload-img-btn');
+            const uploadFileBtn = document.getElementById('upload-file-btn');
+            
+            container.classList.remove('edit-mode', 'split-mode', 'preview-mode');
+            
+            document.querySelectorAll('.view-mode-group button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            const isPreview = mode === 'preview';
+            uploadImgBtn.style.display = isPreview ? 'none' : 'inline-flex';
+            uploadFileBtn.style.display = isPreview ? 'none' : 'inline-flex';
+
+            switch(mode) {
+                case 'edit':
+                    container.classList.add('edit-mode');
+                    document.getElementById('edit-mode-btn').classList.add('active');
+                    break;
+                case 'preview':
+                    container.classList.add('preview-mode');
+                    document.getElementById('preview-mode-btn').classList.add('active');
+                    updatePreview();
+                    break;
+                case 'split':
+                default:
+                    container.classList.add('split-mode');
+                    document.getElementById('split-mode-btn').classList.add('active');
+                    break;
+            }
+            
+            localStorage.setItem('viewMode', mode);
+            logMessage(`切換至${mode === 'edit' ? '編輯' : mode === 'preview' ? '預覽' : '分割'}模式`);
+        }
+
+        // --- 編輯器功能 ---
+        async function openOrInitializeFile(path) {
+            logMessage(`正在處理檔案: ${path}...`);
+            document.getElementById('editor-filename').textContent = "載入中...";
+            document.getElementById('md-editor').value = "載入中...";
+            
+            try {
+                const url = `${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
+                const data = await githubApiRequest(url);
+                
+                if (data.encoding !== 'base64') throw new Error("不支援的檔案編碼");
+
+                currentFile = { path: data.path, sha: data.sha };
+                const content = decodeURIComponent(escape(atob(data.content)));
+
+                document.getElementById('editor-filename').textContent = data.path;
+                document.getElementById('md-editor').value = content;
+                updatePreview();
+                logMessage(`檔案 ${data.path} 載入成功。`, "success");
+
+            } catch (error) {
+                if (error.message.includes("404")) {
+                    logMessage(`檔案 ${path} 不存在，將其視為新檔案。`, "info");
+                    currentFile = { path: path, sha: null };
+                    const filename = path.split('/').pop().replace('.md', '');
+                    const initialContent = `# ${filename}\n\n`;
+
+                    document.getElementById('editor-filename').textContent = path;
+                    document.getElementById('md-editor').value = initialContent;
+                    updatePreview();
+                } else {
+                    logMessage(`開啟檔案失敗: ${error.message}`, "error");
+                    document.getElementById('editor-filename').textContent = `開啟失敗`;
+                    document.getElementById('md-editor').value = `錯誤: ${error.message}`;
+                    document.getElementById('md-editor').disabled = true;
+                }
+            }
+        }
+
+        function updatePreview() {
+            const mdText = document.getElementById('md-editor').value;
+            document.getElementById('md-preview').innerHTML = marked.parse(mdText);
+        }
+
+        async function saveFile() {
+            if (!currentFile.path) {
+                logMessage("錯誤：沒有檔案路徑可儲存。", "error");
+                return;
+            }
+
+            const action = currentFile.sha ? '更新' : '建立';
+            logMessage(`正在${action}檔案 ${currentFile.path}...`);
+
+            try {
+                const url = `${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${currentFile.path}`;
+                const content = document.getElementById('md-editor').value;
+                
+                const body = {
+                    message: `${action} note: ${currentFile.path}`,
+                    content: btoa(unescape(encodeURIComponent(content))),
+                    branch: 'main'
+                };
+
+                if (currentFile.sha) {
+                    body.sha = currentFile.sha;
+                }
+
+                const responseData = await githubApiRequest(url, {
+                    method: 'PUT',
+                    body: JSON.stringify(body)
+                });
+
+                currentFile.sha = responseData.content.sha;
+                logMessage(`檔案儲存成功！新 SHA: ${currentFile.sha}`, "success");
+                alert("檔案儲存成功！");
+
+            } catch (error) {
+                logMessage(`儲存檔案失敗: ${error.message}`, "error");
+                alert(`儲存檔案失敗: ${error.message}`);
+            }
+        }
+        
+        function backToManager() {
+            const pathParts = currentFile.path ? currentFile.path.split('/') : [];
+            let parentPath = ROOT_PATH;
+            if (pathParts.length > 1) {
+                parentPath = pathParts.slice(0, -1).join('/');
+            }
+            window.location.href = `index.html?path=${encodeURIComponent(parentPath)}`;
+        }
+
+        // --- 檔案與圖片上傳功能 ---
+
+        /**
+         * [新增] 清理檔名，移除危險字元並取代空白
+         * @param {string} filename - 原始檔名
+         * @returns {string} - 清理後的檔名
+         */
+        function sanitizeFilename(filename) {
+            // 1. 取代所有不被允許的字元為底線。允許的字元包括：英數字、點、底線、連字號。
+            //    危險字元包括：\ / : * ? " < > | # % & + 和空白
+            const sanitized = filename.replace(/[\\/:*?"<>|#%&+\s]/g, '_');
+            // 2. 將連續的底線合併為一個
+            return sanitized.replace(/_{2,}/g, '_');
+        }
+
+        function triggerImageUpload() {
+            if (!currentFile.path) {
+                alert("請先開啟或建立一個筆記檔案，才能上傳圖片。");
+                return;
+            }
+            document.getElementById('image-uploader').click();
+        }
+        
+        // [新增] 觸發通用檔案上傳
+        function triggerFileUpload() {
+            if (!currentFile.path) {
+                alert("請先開啟或建立一個筆記檔案，才能上傳檔案。");
+                return;
+            }
+            document.getElementById('file-uploader').click();
+        }
+
+        function showUploadStatus(show) {
+            document.getElementById('upload-status').style.display = show ? 'block' : 'none';
+        }
+
+        async function handleImageUpload(input) {
+            if (input.files.length === 0) return;
+
+            const file = input.files[0];
+            const sanitizedFileName = sanitizeFilename(file.name);
+            logMessage(`準備上傳圖片: ${file.name} (將儲存為 ${sanitizedFileName})`);
+
+            const uploadBtn = document.getElementById('upload-img-btn');
+            showUploadStatus(true);
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '上傳中...';
+
+            try {
+                const notePath = currentFile.path;
+                const noteDir = notePath.substring(0, notePath.lastIndexOf('/'));
+                const uniqueImageName = `${Date.now()}-${sanitizedFileName}`;
+                const imageFullPath = `${noteDir}/${IMAGE_SUBFOLDER}/${uniqueImageName}`;
+
+                const base64Content = await getBase64(file);
+
+                logMessage(`正在上傳圖片至: ${imageFullPath}...`);
+                const uploadUrl = `${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${imageFullPath}`;
+                await githubApiRequest(uploadUrl, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        message: `Upload image ${uniqueImageName} for note ${notePath}`,
+                        content: base64Content,
+                        branch: 'main'
+                    })
+                });
+                logMessage("圖片上傳成功！", "success");
+
+                const encodedImageFullPath = imageFullPath.split('/').map(part => encodeURIComponent(part)).join('/');
+                const rawImageUrl = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/${encodedImageFullPath}`;
+                
+                // [修改] 插入連結前先換行，並保留原始檔名作為 alt text
+                const markdownText = `\n\n![${file.name}](${rawImageUrl})`;
+                insertTextAtCursor('md-editor', markdownText);
+                
+                updatePreview();
+
+            } catch (error) {
+                logMessage(`圖片上傳失敗: ${error.message}`, "error");
+                alert(`圖片上傳失敗: ${error.message}`);
+            } finally {
+                showUploadStatus(false);
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '上傳圖片';
+                input.value = '';
+            }
+        }
+        
+        /**
+         * [新增] 處理通用檔案上傳
+         * @param {HTMLInputElement} input - 檔案輸入元素
+         */
+        async function handleFileUpload(input) {
+            if (input.files.length === 0) return;
+
+            const file = input.files[0];
+            const sanitizedFileName = sanitizeFilename(file.name);
+            logMessage(`準備上傳檔案: ${file.name} (將儲存為 ${sanitizedFileName})`);
+
+            const uploadBtn = document.getElementById('upload-file-btn');
+            showUploadStatus(true);
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '上傳中...';
+
+            try {
+                const notePath = currentFile.path;
+                const noteDir = notePath.substring(0, notePath.lastIndexOf('/'));
+                const uniqueFileName = `${Date.now()}-${sanitizedFileName}`;
+                const fileFullPath = `${noteDir}/${FILE_SUBFOLDER}/${uniqueFileName}`;
+
+                const base64Content = await getBase64(file);
+
+                logMessage(`正在上傳檔案至: ${fileFullPath}...`);
+                const uploadUrl = `${GITHUB_API_BASE}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${fileFullPath}`;
+                await githubApiRequest(uploadUrl, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        message: `Upload file ${uniqueFileName} for note ${notePath}`,
+                        content: base64Content,
+                        branch: 'main'
+                    })
+                });
+                logMessage("檔案上傳成功！", "success");
+
+                const encodedFileFullPath = fileFullPath.split('/').map(part => encodeURIComponent(part)).join('/');
+                const rawFileUrl = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/${encodedFileFullPath}`;
+                
+                // [修改] 插入連結前先換行，生成一個可點擊的下載連結
+                const markdownText = `\n\n[${file.name}](${rawFileUrl})`;
+                insertTextAtCursor('md-editor', markdownText);
+                
+                updatePreview();
+
+            } catch (error) {
+                logMessage(`檔案上傳失敗: ${error.message}`, "error");
+                alert(`檔案上傳失敗: ${error.message}`);
+            } finally {
+                showUploadStatus(false);
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '上傳檔案';
+                input.value = '';
+            }
+        }
+
+        function getBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    resolve(reader.result.split(',')[1]);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        function insertTextAtCursor(textareaId, text) {
+            const textarea = document.getElementById(textareaId);
+            const startPos = textarea.selectionStart;
+            const endPos = textarea.selectionEnd;
+            
+            textarea.value = textarea.value.substring(0, startPos) + text + textarea.value.substring(endPos, textarea.value.length);
+            
+            const newCursorPos = startPos + text.length;
+            textarea.selectionStart = newCursorPos;
+            textarea.selectionEnd = newCursorPos;
+            textarea.focus();
+        }
+
+    </script>
+</body>
+</html>
